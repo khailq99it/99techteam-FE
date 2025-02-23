@@ -9,7 +9,6 @@ A modern currency swap form application built with React, TypeScript, and Materi
 - Token icons from Switcheo repository
 - Form validation and error handling
 - Loading states and simulated backend interaction
-- Comprehensive test coverage
 
 ## Prerequisites
 
@@ -34,41 +33,11 @@ yarn dev
 
 The application will be available at `http://localhost:5173`
 
-## Testing
-
-Run tests:
-
-```bash
-yarn test
-```
-
-Run tests in watch mode:
-
-```bash
-yarn test:watch
-```
-
-Generate test coverage report:
-
-```bash
-yarn test:coverage
-```
-
-## Project Structure
-
-```
-src/
-  ├── components/     # React components
-  ├── hooks/         # Custom hooks
-  ├── styles/        # Styling files
-  └── tests/         # Test files
-```
-
 ## Technologies Used
 
 - React
 - TypeScript
 - Material-UI (MUI)
 - TanStack Query
-- Jest & React Testing Library
+- Zustand
 - Vite

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   CardContent,
@@ -13,50 +13,93 @@ import {
   InputLabel,
   Avatar,
 } from '@mui/material';
-import { useTokenPrices } from '../hooks/useTokenPrices';
+import { TokenOption, useTokenPrices } from '../hooks/useTokenPrices';
+import IconButton from '@mui/material/IconButton';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import React from 'react';
+import { swapCurrencies } from '../mocks/currencySwapApi';
+import { useCurrencySwapStore } from '../store/currencySwapStore';
 
 const CurrencySwapForm = () => {
-  const [fromToken, setFromToken] = useState<string>('');
-  const [toToken, setToToken] = useState<string>('');
-  const [fromAmount, setFromAmount] = useState<string>('');
-  const [toAmount, setToAmount] = useState<string>('');
+  const {
+    tokenBalances,
+    setTokenBalance,
+    setUi,
+  } = useCurrencySwapStore();
+
+  const [fromToken, setFromToken] = useState('WBTC');
+  const [toToken, setToToken] = useState('USD');
+  const [swapFromAmount, setFromAmount] = useState(1);
+  const [toAmount, setToAmount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSwapReversed, setIsSwapReversed] = useState(false);
 
   const { availableTokens, isLoading, getExchangeRate } = useTokenPrices();
 
-  // Update to amount whenever dependencies change
+  // Update toAmount whenever dependencies change
   useEffect(() => {
-    if (fromAmount && fromToken && toToken) {
+    if (swapFromAmount && fromToken && toToken) {
       const exchangeRate = getExchangeRate(fromToken, toToken);
-      const result = Number(fromAmount) * exchangeRate;
-      setToAmount(result.toFixed(6));
+      const result = Number(swapFromAmount) * exchangeRate;
+      setToAmount(Number(result.toFixed(6)));
     } else {
-      setToAmount('');
+      setToAmount(0);
     }
-  }, [fromAmount, fromToken, toToken, getExchangeRate]);
+  }, [swapFromAmount, fromToken, toToken, getExchangeRate]);
 
-  const handleFromAmountChange = (value: string) => {
-    setFromAmount(value);
+  // Handle reversing the from and to tokens
+  const handleReverseTokens = useCallback(() => {
+    setFromToken(toToken);
+    setToToken(fromToken);
+    setIsSwapReversed(!isSwapReversed);
+  }, [fromToken, toToken, setIsSwapReversed]);
+
+  // Function to update balances after a successful swap
+  const updateBalances = (fromToken: string, toToken: string, fromAmount: number, toAmount: number) => {
+    setTokenBalance(fromToken, tokenBalances[fromToken] - fromAmount);
+    setTokenBalance(toToken, tokenBalances[toToken] + toAmount);
   };
 
-  const handleSubmit = async () => {
-    if (!fromAmount || !toAmount || !fromToken || !toToken) return;
+  // Handle form submission
+  const handleSubmit = useCallback(async () => {
+    if (!swapFromAmount || !toAmount || !fromToken || !toToken) return;
 
     setIsSubmitting(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      console.log('Swap submitted:', {
+      // Call mock API
+      const result = await swapCurrencies(fromToken, toToken, swapFromAmount, toAmount);
+
+      if (!result) {
+        setUi({ message: 'Swap failed: Unknown error occurred.', severity: 'error', open: true });
+      }
+      console.log('Swap result:', {
         fromToken,
         toToken,
-        fromAmount,
+        swapFromAmount,
         toAmount,
       });
+
+      // Update balances
+      updateBalances(fromToken, toToken, swapFromAmount, toAmount);
+
+      // Show success notification
+      setUi({ message: `Swapped ${swapFromAmount} ${fromToken} for ${toAmount} ${toToken}`, severity: 'success', open: true });
+
+    } catch (error: any) {
+      let errorMessage = 'Swap failed: An unexpected error occurred.';
+      if (error instanceof Error) {
+          errorMessage = `Swap failed: ${error.message}`;
+      }
+      console.error('Swap failed:', errorMessage);
+
+      // Show error notification
+      setUi({ message: `Swap failed: ${errorMessage}`, severity: 'error', open: true });
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [swapFromAmount, toAmount, fromToken, toToken, setIsSubmitting, setUi, updateBalances, tokenBalances, setTokenBalance]);
 
+  // Show loading indicator while data is loading
   if (isLoading) {
     return (
       <Box display="flex" justifyContent="center">
@@ -65,119 +108,129 @@ const CurrencySwapForm = () => {
     );
   }
 
-  // Remove duplicate tokens by using symbol as unique identifier
-  const uniqueTokens = Array.from(
-    new Map(availableTokens.map(token => [token.symbol, token])).values()
-  );
-
+  // Render the form
   return (
-    <Card sx={{ minWidth: 375, maxWidth: 500 }}>
+    <Card sx={{ minWidth: 450 }}>
       <CardContent>
-        <Typography variant="h5" gutterBottom>
+        <Typography variant="h5" gutterBottom align='center' marginBottom={2}>
           Swap Currencies
         </Typography>
 
-        <Box mb={3}>
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>From Token</InputLabel>
-            <Select
-              value={fromToken}
-              label="From Token"
-              onChange={(e) => {
-                setFromToken(e.target.value);
-              }}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Avatar
-                    src={uniqueTokens.find(t => t.symbol === selected)?.iconUrl}
-                    alt={selected}
-                    sx={{ width: 24, height: 24 }}
-                  />
-                  {selected}
-                </Box>
-              )}
-            >
-              {uniqueTokens.map((token) => (
-                <MenuItem key={token.symbol} value={token.symbol}>
+        <Box display="flex" alignItems="center" mb={3}>
+          <Box display="flex" flexDirection="column" mr={2}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>From Token</InputLabel>
+              <Select
+                value={fromToken}
+                label="From Token"
+                onChange={(event) => {
+                  setFromToken(event.target.value);
+                }}
+                renderValue={(selected) => (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Avatar
-                      src={token.iconUrl}
-                      alt={token.symbol}
+                      src={availableTokens.find(t => t.symbol === selected)?.iconUrl}
+                      alt={selected}
                       sx={{ width: 24, height: 24 }}
                     />
-                    {token.symbol}
+                    {selected}
                   </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+                )}
+              >
+                {availableTokens.map((token: TokenOption) => (
+                  <MenuItem key={token.symbol} value={token.symbol}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar
+                        src={token.iconUrl}
+                        alt={token.symbol}
+                        sx={{ width: 24, height: 24 }}
+                      />
+                      {token.symbol}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-          <TextField
-            fullWidth
-            label="Amount to send"
-            type="number"
-            value={fromAmount}
-            onChange={(e) => handleFromAmountChange(e.target.value)}
-            error={fromAmount !== '' && Number(fromAmount) <= 0}
-            helperText={fromAmount !== '' && Number(fromAmount) <= 0 ? 'Amount must be greater than 0' : ''}
-            sx={{ mb: 2 }}
-          />
+            <TextField
+              fullWidth
+              label="Amount to send"
+              type="number"
+              value={swapFromAmount}
+              onChange={(e) => setFromAmount(Math.abs(Number(e.target.value)))}
+              error={String(swapFromAmount) !== '' && swapFromAmount <= 0}
+              helperText={String(swapFromAmount) !== '' && swapFromAmount <= 0 ? 'Amount must be greater than 0' : ''}
+              sx={{ mb: 2 }}
+            />
+            
+            <Typography variant="caption" display="block" gutterBottom>Balance: {tokenBalances[fromToken]} {fromToken}</Typography>
+          </Box>
 
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>To Token</InputLabel>
-            <Select
-              value={toToken}
-              label="To Token"
-              onChange={(e) => {
-                setToToken(e.target.value);
-              }}
-              renderValue={(selected) => (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Avatar
-                    src={uniqueTokens.find(t => t.symbol === selected)?.iconUrl}
-                    alt={selected}
-                    sx={{ width: 24, height: 24 }}
-                  />
-                  {selected}
-                </Box>
-              )}
-            >
-              {uniqueTokens.map((token) => (
-                <MenuItem key={token.symbol} value={token.symbol}>
+          <IconButton
+            onClick={handleReverseTokens}
+            sx={{
+              borderRadius: '50%',
+              border: '1px solid #ccc',
+              ml: 1,
+              mr: 1,
+            }}
+          >
+            <SwapHorizIcon />
+          </IconButton>
+
+          <Box display="flex" flexDirection="column" ml={2}>
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel>To Token</InputLabel>
+              <Select
+                value={toToken}
+                label="To Token"
+                onChange={(event) => {
+                  setToToken(event.target.value);
+                }}
+                renderValue={(selected) => (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Avatar
-                      src={token.iconUrl}
-                      alt={token.symbol}
+                      src={availableTokens.find(t => t.symbol === selected)?.iconUrl}
+                      alt={selected}
                       sx={{ width: 24, height: 24 }}
                     />
-                    {token.symbol}
+                    {selected}
                   </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+                )}
+              >
+                {availableTokens.map((token: TokenOption) => (
+                  <MenuItem key={token.symbol} value={token.symbol}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar
+                        src={token.iconUrl}
+                        alt={token.symbol}
+                        sx={{ width: 24, height: 24 }}
+                      />
+                      {token.symbol}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
 
-          <TextField
-            fullWidth
-            label="Amount to receive"
-            type="number"
-            value={toAmount}
-            disabled
-            sx={{ mb: 2 }}
-          />
+            <TextField
+              fullWidth
+              label="Amount to receive"
+              type="number"
+              value={toAmount}
+              disabled
+              sx={{ mb: 2 }}
+            />
 
-          {fromToken && toToken && (
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-              Exchange Rate: 1 {fromToken} = {getExchangeRate(fromToken, toToken).toFixed(6)} {toToken}
-            </Typography>
-          )}
+            <Typography variant="caption" display="block" gutterBottom>Balance: {tokenBalances[toToken]} {toToken}</Typography>
+          </Box>
         </Box>
 
         <Button
           variant="contained"
           fullWidth
           onClick={handleSubmit}
-          disabled={!fromAmount || !toAmount || !fromToken || !toToken || isSubmitting || Number(fromAmount) <= 0}
+          disabled={!swapFromAmount || !toAmount || !fromToken || !toToken || isSubmitting || Number(swapFromAmount) <= 0}
         >
           {isSubmitting ? <CircularProgress size={24} /> : 'CONFIRM SWAP'}
         </Button>
@@ -186,4 +239,4 @@ const CurrencySwapForm = () => {
   );
 };
 
-export default CurrencySwapForm;
+export default React.memo(CurrencySwapForm);
